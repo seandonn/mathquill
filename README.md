@@ -7,7 +7,18 @@ As current Mathquill development progress appears to be slow, this fork merges s
   * Adds `\matrix`, `\pmatrix`, `\bmatrix`, `\Bmatrix`, `\vMatrix`, and `\VMatrix`
   * `ctrl-space` to add a column, `ctrl-enter` to add a row
 
-Alternative formula editor that looks promising is [guppy-js](), but not sure it supports as many features as MathQuill currently.
+* align* environment from [texthelp](https://github.com/texthelp/mathquill/tree/feature/array-environment-alternative)
+
+  * Adds `\begin{align*}`, see [visual test page](test/visual.html)
+
+* array environment from [Learnosity](https://github.com/Learnosity/mathquill/tree/align-alternative)
+
+  * Adds `\begin{array}{...}` where `...` are arguments designating L, C, R (left, center, right) alignments of columns, and the last column repeats, see [visual test page](test/visual.html)
+
+Alternative formula editors:
+
+ * [MathLive](https://github.com/arnog/mathlive)
+ * [guppy-js](https://guppy.js.org/site/)
 
 # [MathQuill](http://mathquill.com)
 
