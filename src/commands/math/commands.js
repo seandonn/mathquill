@@ -898,6 +898,41 @@ var Environment = P(MathCommand, function(_, super_) {
 
 // An 'abstract' environment extended by matrix and align*
 var TabularEnv = P(Environment, function(_, super_) {
+  _.delimiters = {
+    column: '&',
+    row: '\\\\'
+  };
+  _.addColumn = function(afterCell) {
+    var rows = [], newCells = [];
+    var column, block;
+
+    // Build rows array and find new column index
+    this.eachChild(function (cell) {
+      rows[cell.row] = rows[cell.row] || [];
+      rows[cell.row].push(cell);
+      if (cell === afterCell) column = rows[cell.row].length;
+    });
+
+    // Add new cells, one for each row
+    for (var i=0; i<rows.length; i+=1) {
+      block = TabularCell(i);
+      block.parent = this;
+      newCells.push(block);
+      rows[i].splice(column, 0, block);
+
+      block.jQ = $('<td class="mq-empty">')
+        .attr(mqBlockId, block.id);
+    }
+
+    // Add cell <td> elements in correct positions
+    this.jQ.find('tr').each(function (i) {
+      $(this).find('td').eq(column-1).after(rows[i][column].jQ);
+    });
+
+    // Flatten the rows array-of-arrays
+    this.blocks = [].concat.apply([], rows);
+    return newCells[afterCell.row];
+  };
   _.latex = function() {
     var delimiters = this.delimiters;
     var latex = '';
@@ -915,7 +950,7 @@ var TabularEnv = P(Environment, function(_, super_) {
 
     return this.wrappers().join(latex);
   };
-  _.tableHtml = function(betweenCells) {
+  _.tableHtml = function() {
     var cells = [], trs = '', i=0, row;
 
     // Build <tr><td>.. structure from cells
@@ -931,7 +966,7 @@ var TabularEnv = P(Environment, function(_, super_) {
     return (
         '<table class="mq-non-leaf">'
       +   trs.replace(/\$tds/g, function () {
-            return cells.shift().join(betweenCells || '');
+            return cells.shift().join('');
           })
       + '</table>'
     );
@@ -1215,10 +1250,6 @@ Environments.matrix = P(TabularEnv, function(_, super_) {
     left: '',
     right: ''
   };
-  _.delimiters = {
-    column: '&',
-    row: '\\\\'
-  };
   _.reflow = function() {
     var blockjQ = this.jQ.children('table');
 
@@ -1254,37 +1285,6 @@ Environments.matrix = P(TabularEnv, function(_, super_) {
       TabularCell(1, this),
       TabularCell(1, this)
     ];
-  };
-  _.addColumn = function(afterCell) {
-    var rows = [], newCells = [];
-    var column, block;
-
-    // Build rows array and find new column index
-    this.eachChild(function (cell) {
-      rows[cell.row] = rows[cell.row] || [];
-      rows[cell.row].push(cell);
-      if (cell === afterCell) column = rows[cell.row].length;
-    });
-
-    // Add new cells, one for each row
-    for (var i=0; i<rows.length; i+=1) {
-      block = TabularCell(i);
-      block.parent = this;
-      newCells.push(block);
-      rows[i].splice(column, 0, block);
-
-      block.jQ = $('<td class="mq-empty">')
-        .attr(mqBlockId, block.id);
-    }
-
-    // Add cell <td> elements in correct positions
-    this.jQ.find('tr').each(function (i) {
-      $(this).find('td').eq(column-1).after(rows[i][column].jQ);
-    });
-
-    // Flatten the rows array-of-arrays
-    this.blocks = [].concat.apply([], rows);
-    return newCells[afterCell.row];
   };
 });
 
@@ -1329,66 +1329,171 @@ Environments.Vmatrix = P(Matrix, function(_, super_) {
 });
 
 // An environment for aligning equations that translates well enough to amsmath align*.
-// Similar to matrix, but a more restrictive design
-// allowing only three columns, the middle of which is just the '=' sign, and is represented slightly
-// differently in latex.
+// Similar to matrix, but with a strict set of alignment rules
 Environments['align*'] = P(TabularEnv, function(_, super_) {
   _.environment = 'align*';
   _.removeEmptyColumns = false;
-  _.delimiters = {
-    column: '&=',
-    row: '\\\\'
-  };
-  _.htmlColumnSeparator = '<td class="mq-align-equal">=</td>';
   _.createBlocks = function() {
     this.blocks = [
       TabularCell(0, this),
       TabularCell(0, this)
     ];
   };
-  _.tableHtml = function() {
-    return super_.tableHtml.call(this, this.htmlColumnSeparator);
-  };
   _.html = function () {
     this.htmlTemplate =
-        '<span class="mq-tabular mq-rcl mq-non-leaf">'
+        '<span class="mq-tabular mq-align mq-non-leaf">'
       +   this.tableHtml()
       + '</span>'
     ;
 
     return super_.html.call(this);
   };
-  _.addRow = function(afterCell) {
-    var separator = this.htmlColumnSeparator;
-    return super_.addRow.call(this, afterCell, function (newRow) {
-      // modifyNewRow callback adds column separator as middle cell
-      newRow.find('td').eq(0).after(separator);
-    });
+});
+
+Environments.tabular = 
+Environments.array = P(TabularEnv, function(_, super_) {
+  _.environment = 'array';
+  _.removeEmptyColumns = false;
+  _.createBlocks = function() {
+    this.blocks = [
+      TabularCell(0, this)
+    ];
   };
-  // jQadd hack to keep the cursor in the correct row on seek
-  _.jQadd = function(jQ) {
-    var cmd = this, eachChild = this.eachChild;
-    jQ = super_.jQadd.call(this, jQ);
+  _.html = function () {
+    this.htmlTemplate =
+        '<span class="mq-tabular mq-array-table mq-non-leaf">'
+      +   this.tableHtml()
+      + '</span>'
+    ;
 
-    // Listen for mousedown on td.mq-align-equal descendants
-    // Handler will run just before `this.seek` is triggered by a similar
-    // listener in the controller.
-    jQ.delegate('td.mq-align-equal', 'mousedown.mathquill.alignenv', function (e) {
-      var tds = $(e.currentTarget).siblings('td');
-      var row = Fragment(
-        Node.byId[tds[0].getAttribute(mqBlockId)],
-        Node.byId[tds[1].getAttribute(mqBlockId)]
-      );
+    return super_.html.call(this);
+  };
+  _.getAlignment = function(cellNumber) {
+    if(cellNumber < 0 || cellNumber > this.cellAlignment.length - 1) {
+      return this.cellAlignment[this.cellAlignment.length - 1] || { align: 'l' };
+    }
+    return this.cellAlignment[cellNumber] || { align: 'l' };
+  };
+  _.getCellAlignmentClass = function(cellNumber) {
+    var alignment = this.getAlignment(cellNumber);
+    var className = 'mq-array-align-'+alignment.align;
+    if(alignment.leftBorder) {
+      className += " mq-array-border-l";
+    }
+    if(alignment.rightBorder) {
+      className += " mq-array-border-r";
+    }
+    return className;
+  };
+  _.tableHtml = function() {
+    var cells = [], trs = '', i=0, row;
+    var self = this;
 
-      // Temporarily monkey-patch eachChild so that seek is limited
-      // to this row only.
-      // TODO - fix this properly
-      cmd.eachChild = function() {
-        row.each.apply(row, arguments);
-        cmd.eachChild = eachChild;
-      };
+    // Build <tr><td>.. structure from cells
+    this.eachChild(function (cell) {
+      if (row !== cell.row) {
+        row = cell.row;
+        trs += '<tr>$tds</tr>';
+        cells[row] = [];
+      }
+      cells[row].push('<td class="' + self.getCellAlignmentClass(cells[row].length) + '">&'+(i++)+'</td>');
     });
-    return jQ;
+
+    return (
+        '<table class="mq-non-leaf">'
+      +   trs.replace(/\$tds/g, function () {
+            return cells.shift().join('');
+          })
+      + '</table>'
+    );
+  };
+  _.parseAlignment = function(alignment) {
+    // Ensure the parameter is a string without whitepsace
+    var alignmentString = (alignment || "").toString().trim();
+    var results = [];
+    var current = {};
+    // Iterate the string in sequence, it should be in the format:
+    // lcrlcrlrclll....N
+    // With optional pipe characters indicating the cell should have a border:
+    // e.g. |lcr|l|cr|
+    for(var i=0; i<alignmentString.length; i++) {
+      var char = alignmentString.charAt(i);
+      if(char === '|') {
+        // If the current character is a pipe character at the end
+        // of the string, we should give the cell a right border
+        if(i === alignmentString.length - 1) {
+          current.rightBorder = true;
+          results.push(current);
+          return results;
+        }
+        // Otherwise, we should flag the current cell as having a
+        // left border
+        if(!current.leftBorder) {
+          current.leftBorder = true;
+        }
+        continue;
+      }
+      // Set the alignment flag to the current character, which will be either a
+      // 'l', 'c' or an 'r'
+      current.align = char;
+      // If there are more characters in the string and or the next character is not
+      // a pipe at the end of the string, we should 'commit' this character sequence
+      // to the alignment results
+      if(i < alignmentString.length - 2 || alignmentString.charAt(i + 1) !== '|') {
+        results.push(current);
+        current = {};
+      }
+    }
+    // At this point we'll have an array which describes the alignment for each cell,
+    // include whether or not it has a left or right border
+    return results;
+  };
+  // Tabular/array environments take a secondary parameter which
+  // defines the cell alignment for the current environment
+  _.parser = function() {
+    var self = this;
+    var delimiters = this.delimiters;
+    var optWhitespace = Parser.optWhitespace;
+    var string = Parser.string;
+    var regex = Parser.regex;
+
+    return optWhitespace
+    .then(string('{'))
+    .then(regex(/^[ |lcr]*/))
+    .skip(string('}'))
+    .then(function(alignmentParameter) {
+      // Store the cell alignment against the current environment
+      // All rows will inherit this order
+      self.cellAlignment = self.parseAlignment(alignmentParameter);
+      return optWhitespace
+        .then(string(self.delimiters.column)
+        .or(string(self.delimiters.row))
+        .or(latexMathParser.block))
+        .many();
+    })
+    .skip(optWhitespace)
+    .then(function(items) {
+      var blocks = [];
+      var row = 0;
+      self.blocks = [];
+
+      function addCell() {
+        self.blocks.push(TabularCell(row, self, blocks));
+        blocks = [];
+      }
+
+      for (var i=0; i<items.length; i+=1) {
+        if (items[i] instanceof MathBlock) {
+          blocks.push(items[i]);
+        } else {
+          addCell();
+          if (items[i] === delimiters.row) row+=1;
+        }
+      }
+      addCell();
+      self.autocorrect();
+      return Parser.succeed(self);
+    });
   };
 });
 
